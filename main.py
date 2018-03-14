@@ -6,7 +6,8 @@ from scipy import ndimage
 import pdb
 
 def merge(imgs,transforms,newHeight,newWidth,f):
-
+    print("Attempting to perform the merge.")
+    print("newHt:",str(newHeight)," newWid:",str(newWidth))
     height, width, numChannels = imgs[0,0].shape
     panowidth,panoheight = imgs.shape
 
@@ -23,9 +24,13 @@ def merge(imgs,transforms,newHeight,newWidth,f):
     min_w = 0
     for x in range(0,panowidth):
         for y in range(0,panoheight):
-            p_prime = np.multiply(transforms[x,y],np.transpose([1,1,1]))
+            curr_txfm = np.matrix(transforms[x,y])
+            mul = np.matrix([[1],[1],[1]])
+            p_prime = curr_txfm * mul
+            print(p_prime)
+            # pdb.set_trace()
             try:
-                p_prime = np.divide(p.prime,p.prime[2,0])
+                p_prime = np.divide(p_prime,p_prime[2,0])
             except:
                 print("Array division by zero detected: merge(), (",str(x),",",str(y),")")
                 p_prime = p_prime
@@ -44,20 +49,29 @@ def merge(imgs,transforms,newHeight,newWidth,f):
 
     for x in range(0,panowidth):
         for y in range(0,panoheight):
+            curr_txfm = np.matrix(transforms[x,y])
+            mul = np.matrix([[min_h+10],[min_w+10],[1]])
             try:
-                p_prime = np.divide(p.prime,p.prime[2,0])
+                p_prime = curr_txfm*mul
+                p_prime = p_prime/p_prime[2,0]
             except:
                 print("Array division by zero detected: merge(), (",str(x),",",str(y),")")
                 p_prime = p_prime
             base_h = math.floor(p_prime[0,0])
             base_w = math.floor(p_prime[1,0])
-            # if base_w == 0
-            #     base_w = 0
-            # if base_h == 0
-            #     base_h = 1
+            if base_w == 0:
+                base_w = 1
+            if base_h == 0:
+                base_h = 1
             currimg = imgs[x,y]
-    
-            # pdb.set_trace()
+
+            currimg_withmask = np.matrix(currimg) * np.matrix(mask)
+                    
+            cv2.imshow("image for stitching",currimg)
+            while(True):
+                if cv2.waitKey(1) & 0xFF == ord('q'):
+                        break
+            cv2.destroyAllWindows()
 
             panorama[base_h:base_h+height,base_w:base_w+width,:] = panorama[base_h:base_h+height,base_w:base_w+width,:] + np.multiply(currimg[:,:,:],mask)
             denominator[base_h:base_h+height,base_w:base_w+width,:] = denominator[base_h:base_h+height,base_w:base_w+width,:] + mask
@@ -172,15 +186,23 @@ def create(images,f):
             cylindricalImages[x,y] = (warp(images[x,y],f))
     translations = computeTranslation(cylindricalImages)
 
-    print("|--- Computing absolute translations.")    
-    absoluteTrans = np.zeros(translations.shape,translations.dtype)
     for x in range(0,panowidth):
         for y in range(0,panoheight):
+            print(translations[x,y])
+            this = translations[x,y]
+            print(this)
+
+    print("|--- Computing absolute translations.")    
+    absoluteTrans = np.zeros(translations.shape,translations.dtype)
+
+    for x in range(0,panowidth):
+        for y in range(0,panoheight):
+            this = translations[x,y]
             if x==0 and y==0:
-                absoluteTrans[x,y] = translations[x,y]
+                absoluteTrans[x,y] = this
                 prev = absoluteTrans[x,y]
             else:
-                absoluteTrans[x,y] = prev * translations[x,y]
+                absoluteTrans[x,y] = np.multiply(prev,translations[x,y])
                 prev = absoluteTrans[x,y]
     
     imgheight0, imgwidth0, ch0 = cylindricalImages[0,0].shape
