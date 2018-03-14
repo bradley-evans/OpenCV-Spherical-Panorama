@@ -23,6 +23,9 @@ dataset = main.getImages()
 
 ## TESTS FOR TRANSLATION COMPUTATION ##
 
-translations = main.computeTranslation(dataset)
+# translations = main.computeTranslation(dataset)
+
+## TESTS FOR PANO CREATE FUNCTION ##
+main.create(dataset,2000)
 
 print("I survived.")
