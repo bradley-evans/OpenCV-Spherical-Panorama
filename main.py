@@ -1,102 +1,143 @@
-import numpy as numpy
-import imutils
 import cv2
+import numpy as np
+import math
+import helperfuncs
 
-'''
-Sourcing: 
-https://www.pyimagesearch.com/2016/01/11/opencv-panorama-stitching/
-'''
-class Stitcher:
-    def __init__(self):
-        # Determines if CV v3 is in use.
-        self.isv3 = imutils.is_cv3()
-    def stitch(self, images, ratio=0.75, reprojThresh=4.0,
-        showMatches=False):
-        # unpack the images, then detect keypoints and extract
-        # local invariant descriptors from them
-        (imageB, imageA) = images
-        (kpsA, featuresA) = self.detectAndDescribe(imageA)
-        (kpsB, featuresB) = self.detectAndDescribe(imageB)
- 
-        # match features between the two images
-        M = self.matchKeypoints(kpsA, kpsB,
-            featuresA, featuresB, ratio, reprojThresh)
- 
-        # if the match is None, then there aren't enough matched
-        # keypoints to create a panorama
-        if M is None:
-            return None
-        # otherwise, apply a perspective warp to stitch the images
-        # together
-        (matches, H, status) = M
-        result = cv2.warpPerspective(imageA, H,
-            (imageA.shape[1] + imageB.shape[1], imageA.shape[0]))
-        result[0:imageB.shape[0], 0:imageB.shape[1]] = imageB
- 
-        # check to see if the keypoint matches should be visualized
-        if showMatches:
-            vis = self.drawMatches(imageA, imageB, kpsA, kpsB, matches,
-                status)
- 
-            # return a tuple of the stitched image and the
-            # visualization
-            return (result, vis)
- 
-        # return the stitched image
-        return result
-    def detectAndDescribe(self, image):
-        # convert the image to grayscale
-        gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
- 
-        # check to see if we are using OpenCV 3.X
-        if self.isv3:
-            # detect and extract features from the image
-            descriptor = cv2.xfeatures2d.SIFT_create()
-            (kps, features) = descriptor.detectAndCompute(image, None)
- 
-        # otherwise, we are using OpenCV 2.4.X
-        else:
-            # detect keypoints in the image
-            detector = cv2.FeatureDetector_create("SIFT")
-            kps = detector.detect(gray)
- 
-            # extract features from the image
-            extractor = cv2.DescriptorExtractor_create("SIFT")
-            (kps, features) = extractor.compute(gray, kps)
- 
-        # convert the keypoints from KeyPoint objects to NumPy
-        # arrays
-        kps = np.float32([kp.pt for kp in kps])
- 
-        # return a tuple of keypoints and features
-        return (kps, features)
-    def matchKeypoints(self, kpsA, kpsB, featuresA, featuresB,
-        ratio, reprojThresh):
-        # compute the raw matches and initialize the list of actual
-        # matches
-        matcher = cv2.DescriptorMatcher_create("BruteForce")
-        rawMatches = matcher.knnMatch(featuresA, featuresB, 2)
-        matches = []
- 
-        # loop over the raw matches
-        for m in rawMatches:
-            # ensure the distance is within a certain ratio of each
-            # other (i.e. Lowe's ratio test)
-            if len(m) == 2 and m[0].distance < m[1].distance * ratio:
-                matches.append((m[0].trainIdx, m[0].queryIdx))
-        # computing a homography requires at least 4 matches
-        if len(matches) > 4:
-            # construct the two sets of points
-            ptsA = np.float32([kpsA[i] for (_, i) in matches])
-            ptsB = np.float32([kpsB[i] for (i, _) in matches])
- 
-            # compute the homography between the two sets of points
-            (H, status) = cv2.findHomography(ptsA, ptsB, cv2.RANSAC,
-                reprojThresh)
- 
-            # return the matches along with the homograpy matrix
-            # and status of each matched point
-            return (matches, H, status)
- 
-        # otherwise, no homograpy could be computed
-        return None
+def getMatches(f1,d1,f2,d2):
+    print("|--- Getting matches...")
+    # FLANN parameters
+    FLANN_INDEX_KDTREE = 0
+    index_params = dict(algorithm = FLANN_INDEX_KDTREE, trees = 5)
+    search_params = dict(checks=50)   # or pass empty dictionary
+    flann = cv2.FlannBasedMatcher(index_params,search_params)
+    try:
+        matches = flann.match(d1,d2)
+        matches = sorted(matches, key = lambda x:x.distance)
+    except:
+        print("Error in getMatches().")
+        print(d1.dtype)
+        print(d2.dtype)
+
+    return matches
+
+def computeTranslation(images):
+    print("Creating translation matricies...")
+    # parameters #
+    # threshold =     10
+    # confidence =    0.99
+    # inlierRatio =   0.3
+    # epsilon =       1.5
+    
+    sift = cv2.xfeatures2d.SIFT_create()
+
+    xwidth,ywidth = images.shape
+    translations = np.empty((xwidth,ywidth),dtype=object)
+    for x in range(0,xwidth):
+        for y in range(0,ywidth):
+            translations[x,y] = np.identity(3)
+    
+    for x in range(0,xwidth):
+        for y in range(0,ywidth):
+            # Assuming we are using OpenCV 3.x #
+
+            # Get SIFT Features
+            img = images[x,y].astype(np.uint8)
+            if x==0 and y==0:
+                features2,descriptors2 = sift.detectAndCompute(img,None)
+            else:
+                features1 = features2
+                descriptors1 = descriptors2
+                features2,descriptors2 = sift.detectAndCompute(img,None)
+                matches = getMatches(features1,descriptors1,features2,descriptors2)
+                
+    return translations
+
+def warp(image,f):
+    print("Performing an image warp...")
+
+    sizey, sizex, numChannels = image.shape
+    output = np.zeros((sizey,sizex,numChannels))
+
+    xcenter = int(sizex/2)
+    ycenter = int(sizey/2)
+
+    # This creates a reference matrix
+    # that contains our warp transform.
+    # We'll map image intensities from
+    # img(x,y) => newimg(xx[x,y],yy[x,y]).
+
+    # The amount of spherical warping is
+    # determined by the factor 'f.'
+
+    x = np.arange(0, sizex) - xcenter
+    y = np.arange(0, sizey) - ycenter
+    xx,yy = np.meshgrid(x,y)
+    yy = (np.divide((f*yy),(np.sqrt(np.power(xx,2)+np.power(f,2)))))+ycenter
+    xx = (f * np.arctan(xx/f)) + xcenter
+    xx = np.floor(xx+0.5)
+    yy = np.floor(yy+0.5)
+
+    yy = yy.astype(int)
+    xx = xx.astype(int)
+
+
+    cylinder = np.zeros((sizey,sizex,numChannels),np.uint8)
+
+    for i in range(0,numChannels):
+        for n in range(0,sizey):
+            for m in range(0,sizex):
+                try:
+                    cylinder[yy[n,m],xx[n,m],i] = image[n,m,i]
+                except:
+                    print("Error in warp. Indicies m=",str(m)," n=",str(n)," i=",str(i))
+               
+    cv2.imshow('okay',image)
+    cv2.imshow('warped',cylinder)
+
+    return cylinder
+
+
+def create(images,f):
+    print("Creating panorama...")
+    cylindricalImages = []
+    panorama = []
+
+    for image in images:
+        # warp images cylindrically
+        cylindricalImages.append(warp(image,f))
+    
+    # translations = computeTranslations(cylindricalImages,f)
+
+
+    return panorama
+
+def getImages():
+    print("Getting images...")
+    scalefactor = 0.25
+    xwidth = 17
+    ywidth = 3
+    dataset = np.empty((xwidth,ywidth),dtype=object)
+    for x in range(0,xwidth):
+        for y in range (0,ywidth):
+            filename = helperfuncs.getFilename(x,y)
+            img = cv2.imread(filename)
+            img = cv2.resize(img, None, fx = scalefactor, fy = scalefactor, interpolation = cv2.INTER_CUBIC)
+            # plt.subplot(3,11,i)
+            # plt.imshow(img)
+            # i = i+1
+            dataset[x,y] = img
+    return dataset
+
+def main():
+    # get images #
+    dataset = getImages()
+
+
+    # parameters #
+    f = 1000  # [UNKNOWN] Samsung Galaxy S7 #
+
+    # execution #
+    panorama = create(dataset,f)
+
+
+# main()
