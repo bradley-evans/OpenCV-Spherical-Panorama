@@ -43,6 +43,11 @@ def merge(imgs,transforms,newHeight,newWidth,f):
     panorama = zeros((newHeight+20,newWidth+20,numChannels))
     denominator = zeros((newHeight+20,newWidth+20,numChannels))
 
+    for x in range(0,panowidth):
+        for y in range(0,panoheight):
+            p_prime = transforms[x,y]
+
+
     return panorama
 
 def getMatches(f1,d1,f2,d2):
