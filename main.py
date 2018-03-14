@@ -6,7 +6,6 @@ from scipy import ndimage
 import pdb
 
 def merge(imgs,transforms,newHeight,newWidth,f):
-    panorama = []
 
     height, width, numChannels = imgs[0,0].shape
     panowidth,panoheight = imgs.shape
@@ -30,23 +29,40 @@ def merge(imgs,transforms,newHeight,newWidth,f):
             except:
                 print("Array division by zero detected: merge(), (",str(x),",",str(y),")")
                 p_prime = p_prime
-            base_h = floor(p_prime[0,0])
-            base_w = floor(p_prime[1,0])
-            if base_h > max_h
+            base_h = math.floor(p_prime[0,0])
+            base_w = math.floor(p_prime[1,0])
+            if base_h > max_h:
                 max_h = base_h
-            if base_h < min_h
+            if base_h < min_h:
                 min_h = base_h
-            if base_w > max_w
+            if base_w > max_w:
                 max_w = base_w
-            if base_h < min_w
+            if base_h < min_w:
                 max_w = base_w
-    panorama = zeros((newHeight+20,newWidth+20,numChannels))
-    denominator = zeros((newHeight+20,newWidth+20,numChannels))
+    panorama = np.zeros((newHeight+20,newWidth+20,numChannels))
+    denominator = np.zeros((newHeight+20,newWidth+20,numChannels))
 
     for x in range(0,panowidth):
         for y in range(0,panoheight):
-            p_prime = transforms[x,y]
+            try:
+                p_prime = np.divide(p.prime,p.prime[2,0])
+            except:
+                print("Array division by zero detected: merge(), (",str(x),",",str(y),")")
+                p_prime = p_prime
+            base_h = math.floor(p_prime[0,0])
+            base_w = math.floor(p_prime[1,0])
+            # if base_w == 0
+            #     base_w = 0
+            # if base_h == 0
+            #     base_h = 1
+            currimg = imgs[x,y]
+    
+            # pdb.set_trace()
 
+            panorama[base_h:base_h+height,base_w:base_w+width,:] = panorama[base_h:base_h+height,base_w:base_w+width,:] + np.multiply(currimg[:,:,:],mask)
+            denominator[base_h:base_h+height,base_w:base_w+width,:] = denominator[base_h:base_h+height,base_w:base_w+width,:] + mask
+
+    panorama = np.divide(panorama,denominator)
 
     return panorama
 
@@ -176,7 +192,6 @@ def create(images,f):
         # Otherwise, we need to fix endings.
         helperfuncs.todo()
     else:
-        helperfuncs.todo()
         maxY = imgheight0
         minY = 1
         maxX = imgwidth0
@@ -200,6 +215,11 @@ def create(images,f):
                 absoluteTrans[n,m] = curr
 
     panorama = merge(cylindricalImages,absoluteTrans,panorama_h,panorama_w,f)
+    cv2.imshow('panorama',panorama)
+    while(True):
+        if cv2.waitKey(1) & 0xFF == ord('q'):
+            break
+    cv2.destroyAllWindows()
 
     return panorama
 
