@@ -4,19 +4,20 @@ import math
 import helperfuncs
 from scipy import ndimage
 import pdb
+import matplotlib.pyplot as plt
 
 def merge(imgs,transforms,newHeight,newWidth,f):
     print("Attempting to perform the merge.")
     print("newHt:",str(newHeight)," newWid:",str(newWidth))
     height, width, numChannels = imgs[0,0].shape
     panowidth,panoheight = imgs.shape
-
+    print('Width',panowidth)
+    print('Height',panoheight)
     # Set up the mask #
     mask = warp(np.ones((height,width,numChannels)),f)
-    mask = cv2.bitwise_not(mask)    # get image compliment
+    mask = np.uint8(mask < 1)  # get image compliment
     mask = ndimage.distance_transform_edt(mask)   # bwdist eqivalent from matlab
-    mask = np.divide(mask,mask.max(0))
-
+    mask = np.divide(mask,np.max(mask))+warp(np.ones((height,width,numChannels)),f)
     # Finally, let's perform merge. #
     max_h = 0
     min_h = 0
@@ -44,8 +45,8 @@ def merge(imgs,transforms,newHeight,newWidth,f):
                 max_w = base_w
             if base_h < min_w:
                 max_w = base_w
-    panorama = np.zeros((newHeight+20,newWidth+20,numChannels))
-    denominator = np.zeros((newHeight+20,newWidth+20,numChannels))
+    panorama = np.zeros((newHeight+40,newWidth+40,numChannels))
+    denominator = np.zeros((newHeight+40,newWidth+40,numChannels))
 
     for x in range(0,panowidth):
         for y in range(0,panoheight):
@@ -65,17 +66,17 @@ def merge(imgs,transforms,newHeight,newWidth,f):
                 base_h = 1
             currimg = imgs[x,y]
 
-            currimg_withmask = np.matrix(currimg) * np.matrix(mask)
+            currimg_withmask = np.multiply(currimg,mask)
                     
             cv2.imshow("image for stitching",currimg)
             while(True):
                 if cv2.waitKey(1) & 0xFF == ord('q'):
                         break
             cv2.destroyAllWindows()
-
-            panorama[base_h:base_h+height,base_w:base_w+width,:] = panorama[base_h:base_h+height,base_w:base_w+width,:] + np.multiply(currimg[:,:,:],mask)
+            panorama[base_h:base_h+height,base_w:base_w+width,:] = panorama[base_h:base_h+height,base_w:base_w+width,:] + currimg_withmask
+            #panorama[base_h:base_h+height,base_w:base_w+width,:] = panorama[base_h:base_h+height,base_w:base_w+width,:] + np.multiply(currimg[:,:,:],mask)
             denominator[base_h:base_h+height,base_w:base_w+width,:] = denominator[base_h:base_h+height,base_w:base_w+width,:] + mask
-
+            cv2.imwrite('Pano Prog.jpg',panorama)
     panorama = np.divide(panorama,denominator)
 
     return panorama
@@ -118,7 +119,7 @@ def computeTranslation(images):
                 matches = getMatches(features1,descriptors1,features2,descriptors2)
                 # Use Lowe's Ratio Test to determine good matches.
                 # See: https://docs.opencv.org/3.0-beta/doc/py_tutorials/py_feature2d/py_feature_homography/py_feature_homography.html
-                matchesMask = [[0,0] for i in range(len(matches))]
+                #matchesMask = [[0,0] for i in range(len(matches))]
                 good = []
                 for m,n in matches:
                     if m.distance < 0.7*n.distance:
@@ -152,6 +153,7 @@ def warp(image,f):
     x = np.arange(0, sizex) - xcenter
     y = np.arange(0, sizey) - ycenter
     xx,yy = np.meshgrid(x,y)
+    
     yy = (np.divide((f*yy),(np.sqrt(np.power(xx,2)+np.power(f,2)))))+ycenter
     xx = (f * np.arctan(xx/f)) + xcenter
     xx = np.floor(xx+0.5)
@@ -184,14 +186,17 @@ def create(images,f):
         for y in range(0,panoheight):
             # warp images cylindrically
             cylindricalImages[x,y] = (warp(images[x,y],f))
+            
     translations = computeTranslation(cylindricalImages)
-
+    
+    '''
     for x in range(0,panowidth):
         for y in range(0,panoheight):
             print(translations[x,y])
             this = translations[x,y]
             print(this)
-
+    '''
+    
     print("|--- Computing absolute translations.")    
     absoluteTrans = np.zeros(translations.shape,translations.dtype)
 
@@ -202,8 +207,10 @@ def create(images,f):
                 absoluteTrans[x,y] = this
                 prev = absoluteTrans[x,y]
             else:
-                absoluteTrans[x,y] = np.multiply(prev,translations[x,y])
+                absoluteTrans[x,y] = np.matrix(prev)*np.matrix(translations[x,y])
+                #absoluteTrans[x,y] = np.multiply(prev,translations[x,y])
                 prev = absoluteTrans[x,y]
+    # Assumes that the y is 0 then x is 0 -> translation/scaling from each image to the next?
     
     imgheight0, imgwidth0, ch0 = cylindricalImages[0,0].shape
     # imgheight1, imgwidth1, ch1 = cylindricalImages[0,1].shape
@@ -242,8 +249,9 @@ def create(images,f):
         if cv2.waitKey(1) & 0xFF == ord('q'):
             break
     cv2.destroyAllWindows()
-
+    
     return panorama
+    
 
 def getImages():
     print("Getting images...")
@@ -272,6 +280,7 @@ def main():
 
     # execution #
     panorama = create(dataset,f)
+    cv2.imwrite('pano_testsss.jpg',panorama)
 
 
 # main()
